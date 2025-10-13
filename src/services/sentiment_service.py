@@ -1,76 +1,90 @@
-from transformers import pipeline
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 import logging
+import numpy as np
+from scipy.special import softmax
+import torch
 from typing import Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
 class SentimentService:
     def __init__(self):
+        self.model = None
+        self.tokenizer = None
+        self.config = None
+        self.model_name = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+        self.load_model()
+
+    def preprocess(self, text):
+        """Preprocess text (username and link placeholders)"""
+        new_text = []
+        for t in text.split(" "):
+            t = '@user' if t.startswith('@') and len(t) > 1 else t
+            t = 'http' if t.startswith('http') else t
+            new_text.append(t)
+        return " ".join(new_text)
+
+    def load_model(self):
+        """Load the sentiment analysis model"""
         try:
-            logger.info("Cargando modelo de análisis de sentimientos...")
-            self.model = pipeline(
-                "sentiment-analysis", 
-                model="AventIQ-AI/XLMRoBERTa_Multilingual_Sentiment_Analysis",
-                top_k=None
-            )
-            logger.info("Modelo cargado exitosamente")
+            logger.info(f"Loading model: {self.model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.config = AutoConfig.from_pretrained(self.model_name)
+            self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
+            logger.info("Model loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            raise
+
+    def analyze_sentiment(self, text: str) -> dict:
+        """
+        Analyze sentiment of the given text
+        
+        Args:
+            text (str): Text to analyze
             
-            # Mapeo de etiquetas del modelo a nombres descriptivos
-            self.label_mapping = {
-                "LABEL_0": "negative",
-                "LABEL_1": "positive",
-                "LABEL_2": "neutral"  # Si el modelo tiene 3 clases
+        Returns:
+            dict: Sentiment analysis results
+        """
+        try:
+            # Preprocess the text
+            processed_text = self.preprocess(text)
+            
+            # Tokenize
+            encoded_input = self.tokenizer(processed_text, return_tensors='pt')
+            
+            # Get model output
+            with torch.no_grad():
+                output = self.model(**encoded_input)
+            
+            # Get scores
+            scores = output.logits[0].detach().numpy()
+            scores = softmax(scores)
+            
+            # Create ranking
+            ranking = np.argsort(scores)
+            ranking = ranking[::-1]
+            
+            # Format results
+            results = []
+            for i in range(scores.shape[0]):
+                label = self.config.id2label[ranking[i]]
+                score = float(scores[ranking[i]])
+                results.append({
+                    "label": label,
+                    "score": round(score, 4)
+                })
+            
+            return {
+                "text": text,
+                "processed_text": processed_text,
+                "results": results,
+                "top_sentiment": results[0]["label"],
+                "confidence": results[0]["score"]
             }
             
         except Exception as e:
-            logger.error(f"Error al cargar el modelo: {e}")
-            raise
-    
-    def _map_labels(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Mapea las etiquetas genéricas a nombres descriptivos y formatea la salida.
-        """
-        mapped_results = []
-        
-        for result in results:
-            mapped_label = self.label_mapping.get(result['label'], result['label'])
-            mapped_results.append({
-                "label": mapped_label,
-                "score": round(result['score'], 4),
-                "confidence": "high" if result['score'] > 0.8 else "medium" if result['score'] > 0.6 else "low"
-            })
-        
-        # Ordenar por score descendente
-        mapped_results.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Determinar el sentimiento predominante
-        primary_sentiment = mapped_results[0] if mapped_results else {"label": "unknown", "score": 0.0, "confidence": "low"}
-        
-        return {
-            "predicted_sentiment": primary_sentiment['label'],
-            "confidence": primary_sentiment['confidence'],
-            "primary_score": primary_sentiment['score'],
-            "all_scores": mapped_results
-        }
-    
-    def analyze(self, text: str) -> Dict[str, Any]:
-        try:
-            results = self.model(text)
-            logger.info(f"Resultados raw del modelo: {results}")
-            
-            # Extraer la lista de resultados
-            if isinstance(results, list) and len(results) > 0:
-                if isinstance(results[0], list):
-                    sentiment_results = results[0]
-                else:
-                    sentiment_results = results
-            else:
-                sentiment_results = []
-            
-            return self._map_labels(sentiment_results)
-            
-        except Exception as e:
-            logger.error(f"Error al analizar texto: {e}")
+            logger.error(f"Error analyzing sentiment: {e}")
             raise
 
 # Instancia global del servicio
@@ -93,4 +107,4 @@ def analyze_sentiment(text: str) -> Dict[str, Any]:
         Dict[str, Any]: Resultados formateados con sentimiento predicho y puntuaciones
     """
     service = get_sentiment_service()
-    return service.analyze(text)
+    return service.analyze_sentiment(text)

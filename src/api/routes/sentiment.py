@@ -18,19 +18,23 @@ async def analyze_text_sentiment(request: SentimentRequest):
             raise HTTPException(status_code=400, detail="El texto no puede estar vacío")
             
         logger.info(f"Analizando texto: {request.text[:100]}...")
-        results = analyze_sentiment(request.text)
-        logger.info(f"Resultados obtenidos: {results}")
+        result = analyze_sentiment(request.text)
+        logger.info(f"Resultados obtenidos: {result}")
         
-        # Convertir all_scores a objetos SentimentScore
+        # Convertir results a objetos SentimentScore con el formato correcto
         sentiment_scores = [
-            SentimentScore(**score) for score in results["all_scores"]
+            SentimentScore(
+                label=score["label"],
+                score=score["score"],
+                confidence=f"{score['score']:.4f}"
+            ) for score in result["results"]
         ]
         
         return SentimentResponse(
-            text=request.text,
-            predicted_sentiment=results["predicted_sentiment"],
-            confidence=results["confidence"],
-            primary_score=results["primary_score"],
+            text=result["text"],
+            predicted_sentiment=result["top_sentiment"],
+            confidence=f"{result['confidence']:.4f}",
+            primary_score=result["confidence"],
             all_scores=sentiment_scores
         )
         
