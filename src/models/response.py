@@ -12,6 +12,7 @@ class SentimentResponse(BaseModel):
     confidence: str
     primary_score: float
     all_scores: List[SentimentScore]
+    model_version: str = "Twitter-roBERTa"  # Identificador del modelo
     
 class SentimentAnalysisResult(BaseModel):
     predicted_sentiment: str

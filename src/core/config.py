@@ -1,7 +1,7 @@
 from pydantic import BaseSettings
 
 class Settings(BaseSettings):
-    huggingface_model: str = "AventIQ-AI/XLMRoBERTa_Multilingual_Sentiment_Analysis"
+    huggingface_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
     api_key: str = ""
 
     class Config:
